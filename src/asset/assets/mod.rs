@@ -1,9 +1,9 @@
 mod attr;
+mod img;
 mod msh;
 mod shdr;
-mod txtr;
 
 pub use attr::*;
+pub use img::*;
 pub use msh::*;
 pub use shdr::*;
-pub use txtr::*;
