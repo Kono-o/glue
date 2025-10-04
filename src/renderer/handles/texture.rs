@@ -1,4 +1,5 @@
-use crate::Size2D;
+use crate::asset::delete_texture2d;
+use crate::{Image, Size2D};
 
 #[derive(Debug, Clone)]
 pub(crate) enum ImgFormat {
@@ -53,7 +54,7 @@ pub enum ImgWrap {
 }
 
 #[derive(Clone, Debug)]
-pub struct Texture {
+pub struct Texture2D {
    pub(crate) id: u32,
    pub(crate) size: Size2D,
    pub(crate) fmt: ImgFormat,
@@ -61,17 +62,7 @@ pub struct Texture {
    pub(crate) wrap: ImgWrap,
 }
 
-impl Texture {
-   pub(crate) fn temporary() -> Texture {
-      Texture {
-         id: 0,
-         size: Size2D::empty(),
-         fmt: ImgFormat::R(0),
-         filter: ImgFilter::Linear,
-         wrap: ImgWrap::Repeat,
-      }
-   }
-
+impl Texture2D {
    pub fn size(&self) -> Size2D {
       self.size
    }
@@ -88,5 +79,8 @@ impl Texture {
    }
    pub fn set_filter(&mut self, filter: ImgFilter) {
       self.filter = filter
+   }
+   pub fn delete(self) {
+      delete_texture2d(self.id)
    }
 }

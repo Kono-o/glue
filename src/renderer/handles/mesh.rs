@@ -1,6 +1,15 @@
-use crate::Transform2D;
 use crate::asset::ATTRInfo;
+use crate::{ATTRType, Transform2D};
 use crate::{Shader, Transform3D};
+use gl::types::{GLenum, GLint, GLsizei, GLsizeiptr};
+use std::ffi::c_void;
+use std::ptr;
+
+pub struct StorageBuffer {
+   id: u32,
+   size: usize,
+   binding_point: Option<u32>,
+}
 
 #[derive(Clone, Debug, Copy)]
 pub enum DrawMode {
@@ -19,6 +28,7 @@ impl Default for DrawMode {
 #[derive(Clone, Debug)]
 pub(crate) struct MeshHandle {
    pub(crate) layouts: Vec<(ATTRInfo, u32)>,
+   pub(crate) draw_mode: DrawMode,
    pub(crate) has_indices: bool,
    pub(crate) vert_count: u32,
    pub(crate) ind_count: u32,
@@ -33,7 +43,6 @@ macro_rules! mesh_struct {
       pub struct $mesh {
          pub(crate) visibility: bool,
          pub(crate) handle: MeshHandle,
-         pub(crate) draw_mode: DrawMode,
          pub(crate) shader: Option<Shader>,
          pub transform: $transform,
       }
@@ -46,10 +55,10 @@ macro_rules! mesh_struct {
             self.shader = None
          }
          pub fn get_draw_mode(&self) -> DrawMode {
-            self.draw_mode
+            self.handle.draw_mode
          }
          pub fn set_draw_mode(&mut self, draw_mode: DrawMode) {
-            self.draw_mode = draw_mode
+            self.handle.draw_mode = draw_mode
          }
 
          pub fn index_count(&self) -> u32 {
@@ -84,3 +93,336 @@ macro_rules! mesh_struct {
 }
 mesh_struct!(Mesh3D, Transform3D);
 mesh_struct!(Mesh2D, Transform2D);
+
+impl Mesh3D {
+   pub fn render(&self) {
+      if !self.is_visible() {
+         return;
+      }
+      let shader = match &self.shader {
+         None => return,
+         Some(sh) => sh,
+      };
+      shader.bind();
+      //shader.set_uni_m4_f32("uView", self.cam.transform.view_matrix());
+      //shader.set_uni_m4_f32(s, "uProj", self.cam.transform.proj_matrix());
+
+      let tfm = self.transform.matrix();
+      shader.set_uni_m4_f32("uTfm", tfm);
+
+      self.bind_textures(shader.is_compute, &shader.tex_ids);
+      &self.handle.draw()
+   }
+   pub fn delete(self) {
+      self.handle.delete()
+   }
+}
+
+impl Mesh2D {
+   pub fn render(&self) {
+      if !self.is_visible() {
+         return;
+      }
+      let shader = match &self.shader {
+         None => return,
+         Some(sh) => sh,
+      };
+      shader.bind();
+
+      let _scale = 1.0;
+      let _max_layers = 255;
+      let tfm = self.transform.matrix();
+      let layer = self.transform.layer() as u32;
+      //let w = self.cam.transform.size.aspect_ratio() * scale;
+      //let proj = ortho(-w, w, -scale, scale, 0.0, -(max_layers + 1) as f32);
+
+      //shader.set_uni_m4_f32("uProj", proj);
+      shader.set_uni_m4_f32("uTfm", tfm);
+      shader.set_uni_u32("uLayer", layer);
+
+      self.bind_textures(shader.is_compute, &shader.tex_ids);
+      &self.handle.draw()
+   }
+
+   pub fn delete(self) {
+      self.handle.delete()
+   }
+}
+
+impl MeshHandle {
+   pub(crate) fn draw(&self) {
+      bind_layouts(self.vao_id);
+      match self.has_indices {
+         false => self.draw_array(),
+         true => {
+            self.bind_index_buffer();
+            self.draw_indexed();
+         }
+      }
+   }
+
+   pub(crate) fn draw_indexed(&self) {
+      let draw_mode = match_draw_mode(&self.draw_mode);
+      unsafe {
+         gl::DrawElements(
+            draw_mode,
+            self.ind_count as GLsizei,
+            gl::UNSIGNED_INT,
+            ptr::null(),
+         );
+      }
+   }
+
+   pub(crate) fn draw_array(&self) {
+      let draw_mode = match_draw_mode(&self.draw_mode);
+      unsafe {
+         gl::DrawArrays(draw_mode, 0, self.vert_count as GLsizei);
+      }
+   }
+
+   pub(crate) fn delete(self) {
+      delete_mesh_buffer(self.vao_id, self.buf_id);
+      delete_index_buffer(self.ind_id);
+   }
+}
+
+fn match_draw_mode(dm: &DrawMode) -> GLenum {
+   match dm {
+      DrawMode::Points => gl::POINTS,
+      DrawMode::Lines => gl::LINES,
+      DrawMode::Triangles => gl::TRIANGLES,
+      DrawMode::Strip => gl::TRIANGLE_STRIP,
+   }
+}
+
+//BUFFERS
+pub(crate) fn create_mesh_buffer() -> (u32, u32) {
+   let (mut v_id, mut b_id): (u32, u32) = (0, 0);
+   unsafe {
+      gl::GenVertexArrays(1, &mut v_id);
+      gl::GenBuffers(1, &mut b_id);
+   }
+   (v_id, b_id)
+}
+
+pub(crate) fn delete_mesh_buffer(v_id: u32, b_id: u32) {
+   unsafe {
+      gl::DeleteVertexArrays(1, &v_id);
+      gl::DeleteBuffers(1, &b_id);
+   }
+}
+
+//VAO
+pub(crate) fn bind_layouts(v_id: u32) {
+   unsafe {
+      gl::BindVertexArray(v_id);
+   }
+}
+
+pub(crate) fn set_attr_layout(attr: &ATTRInfo, attr_id: u32, stride: usize, local_offset: usize) {
+   unsafe {
+      gl::VertexAttribPointer(
+         attr_id,
+         attr.elem_count as GLint,
+         match_attr_type(&attr.typ),
+         gl::FALSE,
+         stride as GLsizei,
+         match local_offset {
+            0 => ptr::null(),
+            _ => local_offset as *const c_void,
+         },
+      );
+      gl::EnableVertexAttribArray(attr_id);
+   }
+}
+
+pub(crate) fn unbind_layouts() {
+   unsafe {
+      gl::BindVertexArray(0);
+   }
+}
+
+//VBO
+pub(crate) fn bind_buffer(id: u32) {
+   unsafe {
+      gl::BindBuffer(gl::ARRAY_BUFFER, id);
+   }
+}
+
+pub(crate) fn fill_buffer(id: u32, data: &[u8]) {
+   unsafe {
+      bind_buffer(id);
+
+      gl::BufferData(
+         gl::ARRAY_BUFFER,
+         data.len() as GLsizeiptr,
+         &data[0] as *const u8 as *const c_void,
+         gl::DYNAMIC_DRAW,
+      );
+   }
+}
+
+pub(crate) fn subfill_buffer(id: u32, offset: usize, data: &[u8]) {
+   unsafe {
+      gl::BindBuffer(gl::ARRAY_BUFFER, id);
+      gl::BufferSubData(
+         gl::ARRAY_BUFFER,
+         offset as isize,
+         data.len() as isize,
+         data.as_ptr() as *const c_void,
+      );
+   }
+}
+
+pub(crate) fn resize_buffer(id: u32, size: usize) {
+   unsafe {
+      gl::BindBuffer(gl::ARRAY_BUFFER, id);
+      gl::BufferData(
+         gl::ARRAY_BUFFER,
+         size as GLsizeiptr,
+         std::ptr::null(),
+         gl::DYNAMIC_DRAW,
+      );
+   }
+}
+
+pub(crate) fn unbind_buffer() {
+   unsafe {
+      gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+   }
+}
+
+//EBO
+pub(crate) fn create_index_buffer() -> u32 {
+   let mut id: u32 = 0;
+   unsafe {
+      gl::GenBuffers(1, &mut id);
+   }
+   id
+}
+
+pub(crate) fn bind_index_buffer(id: u32) {
+   unsafe {
+      gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, id);
+   }
+}
+
+pub(crate) fn fill_index_buffer(id: u32, data: &[u32]) {
+   unsafe {
+      bind_index_buffer(id);
+      gl::BufferData(
+         gl::ELEMENT_ARRAY_BUFFER,
+         (data.len() * size_of::<GLint>()) as GLsizeiptr,
+         &data[0] as *const u32 as *const c_void,
+         gl::DYNAMIC_DRAW,
+      );
+   }
+}
+
+pub(crate) fn unbind_index_buffer() {
+   unsafe {
+      gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
+   }
+}
+
+pub(crate) fn delete_index_buffer(id: u32) {
+   unsafe {
+      gl::DeleteBuffers(1, &id);
+   }
+}
+
+//SBO
+pub(crate) fn create_storage_buffer() -> u32 {
+   let mut id: u32 = 0;
+   unsafe {
+      gl::GenBuffers(1, &mut id);
+   }
+   id
+}
+
+pub(crate) fn bind_storage_buffer(id: u32) {
+   unsafe {
+      gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, id);
+   }
+}
+
+pub(crate) fn bind_storage_buffer_at(id: u32, slot: u32) {
+   unsafe {
+      gl::BindBufferBase(gl::SHADER_STORAGE_BUFFER, slot, id);
+   }
+}
+
+pub(crate) fn fill_storage_buffer(id: u32, buffer: &[u8]) {
+   unsafe {
+      bind_storage_buffer(id);
+      gl::BufferData(
+         gl::SHADER_STORAGE_BUFFER,
+         buffer.len() as GLsizeiptr,
+         buffer.as_ptr() as *const c_void,
+         gl::DYNAMIC_DRAW,
+      );
+   }
+}
+
+pub(crate) fn subfill_storage_buffer(id: u32, offset: usize, data: &[u8]) {
+   unsafe {
+      gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, id);
+      gl::BufferSubData(
+         gl::SHADER_STORAGE_BUFFER,
+         offset as isize,
+         data.len() as isize,
+         data.as_ptr() as *const c_void,
+      );
+   }
+}
+
+pub(crate) fn resize_storage_buffer(id: u32, size: usize) {
+   unsafe {
+      bind_storage_buffer(id);
+      gl::BufferData(
+         gl::SHADER_STORAGE_BUFFER,
+         size as GLsizeiptr,
+         ptr::null(),
+         gl::DYNAMIC_DRAW,
+      );
+   }
+}
+
+pub(crate) fn read_storage_buffer(id: u32, size: usize) -> Vec<u8> {
+   unsafe {
+      bind_storage_buffer(id);
+      let mut data = vec![0u8; size];
+      gl::GetBufferSubData(
+         gl::SHADER_STORAGE_BUFFER,
+         0,
+         size as GLsizeiptr,
+         data.as_mut_ptr() as *mut c_void,
+      );
+      data
+   }
+}
+
+pub(crate) fn unbind_storage_buffer() {
+   unsafe {
+      gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, 0);
+   }
+}
+
+pub(crate) fn delete_storage_buffer(id: u32) {
+   unsafe {
+      gl::DeleteBuffers(1, &id);
+   }
+}
+
+fn match_attr_type(attr_type: &ATTRType) -> GLenum {
+   match attr_type {
+      ATTRType::I8 => gl::BYTE,
+      ATTRType::U8 => gl::UNSIGNED_BYTE,
+      ATTRType::I16 => gl::SHORT,
+      ATTRType::U16 => gl::UNSIGNED_SHORT,
+      ATTRType::I32 => gl::INT,
+      ATTRType::U32 => gl::UNSIGNED_INT,
+      ATTRType::F32 => gl::FLOAT,
+      ATTRType::F64 => gl::DOUBLE,
+   }
+}

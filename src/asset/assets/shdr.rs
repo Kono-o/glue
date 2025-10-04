@@ -1,6 +1,8 @@
 use crate::asset::file::IOError;
-use crate::asset::util;
+
 use crate::*;
+use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
+use std::ffi::CString;
 
 #[derive(Debug)]
 pub enum FileError {
@@ -98,6 +100,8 @@ impl ShaderMode {
    }
 }
 
+pub enum ShaderError {}
+
 pub enum ShaderFile {
    Pipe { v_src: String, f_src: String },
    Comp(String),
@@ -156,6 +160,85 @@ impl ShaderFile {
          GLSL::ParsedCompute(src) => Ok(ShaderFile::Comp(src)),
       }
    }
+
+   pub fn compile(self) -> Result<Shader, GLueError> {
+      let (src1, src2, is_compute) = match self {
+         ShaderFile::Pipe { v_src, f_src } => (v_src, Some(f_src), false),
+         ShaderFile::Comp(src) => (src, None, true),
+      };
+
+      let id = match link_program(&src1, &src2) {
+         Err(e) => return Err(e),
+         Ok(id) => id,
+      };
+
+      let shader = Shader {
+         workers: Workers::empty(),
+         id,
+         is_compute,
+         tex_ids: vec![],
+      };
+      Ok(shader)
+   }
+}
+
+fn compile_shader(src: &str, typ: ShaderSrcType) -> Result<u32, GLueError> {
+   let src = match CString::new(src) {
+      Err(e) => return Err(GLueError::wtf(&format!("c-string failed! {e}"))),
+      Ok(s) => s,
+   };
+   unsafe {
+      let shader_id = gl::CreateShader(gl_match_shader_type(&typ));
+      gl::ShaderSource(shader_id, 1, &src.as_ptr(), ptr::null());
+      gl::CompileShader(shader_id);
+
+      match shader_compile_failure(shader_id) {
+         Ok(()) => Ok(shader_id as u32),
+         Err(e) => Err(e),
+      }
+   }
+}
+
+fn link_program(src1: &str, src2: &Option<String>) -> Result<u32, GLueError> {
+   unsafe {
+      let program_id = gl::CreateProgram();
+      let v_shader_id = match compile_shader(src1, ShaderSrcType::Vert) {
+         Err(e) => return Err(e),
+         Ok(vs_id) => vs_id,
+      };
+      let mut f_shader_id = 0;
+      gl::AttachShader(program_id, v_shader_id);
+      match src2 {
+         None => {}
+         Some(frag) => {
+            f_shader_id = match compile_shader(frag, ShaderSrcType::Frag) {
+               Err(e) => return Err(e),
+               Ok(fs_id) => fs_id,
+            };
+            gl::AttachShader(program_id, f_shader_id);
+         }
+      }
+      gl::LinkProgram(program_id);
+
+      match program_link_failure(program_id) {
+         Err(e) => Err(e),
+         Ok(()) => {
+            delete_shader(v_shader_id);
+            if src2.is_some() {
+               delete_shader(f_shader_id);
+            }
+            Ok(program_id as u32)
+         }
+      }
+   }
+}
+
+pub fn delete_shader(id: u32) {
+   unsafe { gl::DeleteShader(id) }
+}
+
+pub(crate) fn delete_program(id: u32) {
+   unsafe { gl::DeleteProgram(id) }
 }
 
 fn clone_slice_4(bytes: &[u8]) -> [u8; 4] {
@@ -183,4 +266,65 @@ fn u32_to_vec_of_4_u8s(n: u32) -> Vec<u8> {
       }
    }
    vec
+}
+
+fn gl_match_shader_type(t: &ShaderSrcType) -> GLenum {
+   match t {
+      ShaderSrcType::Vert => gl::VERTEX_SHADER,
+      ShaderSrcType::Frag => gl::FRAGMENT_SHADER,
+   }
+}
+
+unsafe fn shader_compile_failure(shader: GLuint) -> Result<(), GLueError> {
+   let mut success = gl::FALSE as GLint;
+   gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
+   if success != gl::TRUE as GLint {
+      let mut log_len = 0;
+      gl::GetShaderiv(shader, gl::INFO_LOG_LENGTH, &mut log_len);
+      let mut log = Vec::new();
+      log.resize(log_len as usize - 1, 0);
+
+      gl::GetShaderInfoLog(
+         shader,
+         log_len as GLsizei,
+         ptr::null_mut(),
+         log.as_mut_ptr() as *mut GLchar,
+      );
+      let log = str::from_utf8(&log)
+         .unwrap_or("unreachable-log")
+         .to_string();
+      Err(GLueError::from(
+         GLueErrorKind::ShaderCompileFailed,
+         &format!("shader compile failed: {log}"),
+      ))
+   } else {
+      Ok(())
+   }
+}
+
+unsafe fn program_link_failure(program: GLuint) -> Result<(), GLueError> {
+   let mut success = gl::FALSE as GLint;
+   gl::GetProgramiv(program, gl::LINK_STATUS, &mut success);
+   if success != gl::TRUE as GLint {
+      let mut log_len = 0;
+      gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &mut log_len);
+      let mut log = Vec::new();
+      log.resize(log_len as usize - 1, 0);
+
+      gl::GetProgramInfoLog(
+         program,
+         log_len as GLsizei,
+         ptr::null_mut(),
+         log.as_mut_ptr() as *mut GLchar,
+      );
+      let log = str::from_utf8(&log)
+         .unwrap_or("unreachable-log")
+         .to_string();
+      Err(GLueError::from(
+         GLueErrorKind::ProgramLinkFailed,
+         &format!("program link failed: {log}"),
+      ))
+   } else {
+      Ok(())
+   }
 }
