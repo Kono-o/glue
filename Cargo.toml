@@ -1,0 +1,24 @@
+[package]
+name = "glue"
+version = "0.1.0"
+edition = "2024"
+authors = ["Kono"]
+description = "blank Kargo description."
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/Kono-o/glue"
+keywords = ["graphics", "opengl", "shaders"]
+categories = ["rendering::graphics-api"]
+homepage = "https://github.com/Kono-o/glue"
+documentation = "https://docs.rs/glue"
+[dependencies]
+
+cgmath = "0.18.0"
+khronos-egl = { version = "6.0", features = ["static"] }
+gl = "0.14.0"
+flate2 = "1.1.2"
+image = "0.25.8"
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
