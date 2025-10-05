@@ -63,6 +63,12 @@ pub struct Texture2D {
 }
 
 impl Texture2D {
+   pub fn id(&self) -> u32 {
+      self.id
+   }
+}
+
+impl Texture2D {
    pub fn size(&self) -> Size2D {
       self.size
    }

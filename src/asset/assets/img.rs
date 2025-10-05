@@ -1,7 +1,7 @@
 use crate::renderer::ImgFormat;
 use crate::{GLueError, GLueErrorKind, ImgFilter, ImgWrap, Size2D, Texture2D};
 use gl::types::{GLenum, GLint, GLsizei};
-use image::{ColorType, GenericImageView};
+use image::{ColorType, EncodableLayout, GenericImageView, Rgba, RgbaImage};
 use std::ffi::c_void;
 
 #[derive(Debug)]
@@ -16,8 +16,8 @@ pub struct Image {
 
 impl Image {
    pub fn from_path(path: &str) -> Result<Image, GLueError> {
-      let (color, (w, h), rgba32f) = match image::open(path) {
-         Ok(i) => (i.color(), i.dimensions(), i.into_rgba32f()),
+      let ((w, h), rgba8) = match image::open(path) {
+         Ok(i) => (i.dimensions(), i.into_rgba8()),
          Err(e) => {
             return Err(GLueError::from(
                GLueErrorKind::WierdFile,
@@ -25,12 +25,27 @@ impl Image {
             ));
          }
       };
+      let color = ColorType::Rgba8;
+      let mut bytes = Vec::new();
+      //println!("{:?}", color);
 
-      let bytes = rgba32f
-         .as_raw()
-         .iter()
-         .flat_map(|&f| f.to_ne_bytes())
-         .collect::<Vec<u8>>();
+      //std::process::exit(0);
+      for pixel in rgba8.pixels() {
+         let r = pixel.0[0];
+         let g = pixel.0[1];
+         let b = pixel.0[2];
+         let a = pixel.0[3];
+         bytes.push(r);
+         bytes.push(g);
+         bytes.push(b);
+         bytes.push(a);
+      }
+
+      /*let bytes = rgba32f
+      .as_raw()
+      .iter()
+      .flat_map(|&f| f.to_ne_bytes())
+      .collect::<Vec<u8>>();*/
 
       let fmt = match color {
          ColorType::L8 => ImgFormat::R(8),
@@ -63,11 +78,20 @@ impl Image {
       })
    }
 
+   pub fn size(&self) -> Size2D {
+      self.size
+   }
    pub fn set_wrap(&mut self, wrap: ImgWrap) {
       self.wrap = wrap
    }
    pub fn set_filter(&mut self, filter: ImgFilter) {
       self.filter = filter
+   }
+   pub fn wrap(&mut self) -> ImgWrap {
+      self.wrap
+   }
+   pub fn filter(&mut self) -> ImgFilter {
+      self.filter
    }
 
    pub fn pixel_count(&self) -> usize {

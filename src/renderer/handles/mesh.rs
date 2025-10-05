@@ -328,48 +328,74 @@ pub(crate) fn delete_index_buffer(id: u32) {
 }
 
 //SBO
-pub struct StorageBuffer {
+pub struct StorageBuffer<T> {
    pub(crate) id: u32,
-   pub(crate) size: usize,
+   pub(crate) count: usize,
+   _phantom: std::marker::PhantomData<T>,
 }
 
-impl StorageBuffer {
+impl<T> StorageBuffer<T> {
+   pub fn id(&self) -> u32 {
+      self.id
+   }
+}
+
+impl<T> StorageBuffer<T> {
    pub(crate) fn bind(&self) {
       bind_storage_buffer(self.id);
    }
 
-   pub fn new(size: usize) -> StorageBuffer {
+   pub fn new(count: usize) -> Self {
       let id = create_storage_buffer();
-      resize_storage_buffer(id, size);
-      StorageBuffer { id, size }
-   }
-   pub fn resize(&mut self, size: usize) {
-      self.bind();
-      if size != self.size {
-         self.size = size;
-         resize_storage_buffer(self.id, self.size);
+      resize_storage_buffer::<T>(id, count);
+      StorageBuffer {
+         id,
+         count,
+         _phantom: std::marker::PhantomData,
       }
    }
 
-   pub fn fill(&mut self, data: &[u8]) {
+   pub fn resize(&mut self, count: usize) {
       self.bind();
-      let len = data.len();
-      self.resize(len);
+      if count != self.count {
+         self.count = count;
+         resize_storage_buffer::<T>(self.id, self.count);
+      }
+   }
+
+   pub fn fill(&mut self, data: &[T]) {
+      self.bind();
+      let count = data.len();
+      self.resize(count);
       fill_storage_buffer(self.id, data)
    }
-   pub fn subfill(&mut self, offset: usize, data: &[u8]) {
+
+   pub fn subfill(&mut self, offset: usize, data: &[T]) {
       self.bind();
-      let len = data.len() + offset;
-      self.resize(len);
+      let total_count = data.len() + offset;
+      self.resize(total_count);
       subfill_storage_buffer(self.id, offset, data)
    }
-   pub fn fetch(&self) -> Vec<u8> {
+
+   pub fn fetch(&self) -> Vec<T>
+   where
+      T: Default + Clone,
+   {
       self.bind();
-      read_storage_buffer(self.id, self.size)
+      read_storage_buffer(self.id, self.count)
    }
+
    pub fn delete(self) {
       delete_storage_buffer(self.id);
       unbind_storage_buffer()
+   }
+
+   pub fn count(&self) -> usize {
+      self.count
+   }
+
+   pub fn byte_size(&self) -> usize {
+      self.count * size_of::<T>()
    }
 }
 
@@ -393,50 +419,53 @@ pub(crate) fn bind_storage_buffer_at(id: u32, slot: u32) {
    }
 }
 
-pub(crate) fn fill_storage_buffer(id: u32, buffer: &[u8]) {
+pub(crate) fn fill_storage_buffer<T>(id: u32, buffer: &[T]) {
    unsafe {
       bind_storage_buffer(id);
       gl::BufferData(
          gl::SHADER_STORAGE_BUFFER,
-         buffer.len() as GLsizeiptr,
+         (buffer.len() * size_of::<T>()) as GLsizeiptr,
          buffer.as_ptr() as *const c_void,
          gl::DYNAMIC_DRAW,
       );
    }
 }
 
-pub(crate) fn subfill_storage_buffer(id: u32, offset: usize, data: &[u8]) {
+pub(crate) fn subfill_storage_buffer<T>(id: u32, offset: usize, data: &[T]) {
    unsafe {
       gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, id);
       gl::BufferSubData(
          gl::SHADER_STORAGE_BUFFER,
-         offset as isize,
-         data.len() as isize,
+         (offset * size_of::<T>()) as isize,
+         (data.len() * size_of::<T>()) as isize,
          data.as_ptr() as *const c_void,
       );
    }
 }
 
-pub(crate) fn resize_storage_buffer(id: u32, size: usize) {
+pub(crate) fn resize_storage_buffer<T>(id: u32, count: usize) {
    unsafe {
       bind_storage_buffer(id);
       gl::BufferData(
          gl::SHADER_STORAGE_BUFFER,
-         size as GLsizeiptr,
+         (count * size_of::<T>()) as GLsizeiptr,
          ptr::null(),
          gl::DYNAMIC_DRAW,
       );
    }
 }
 
-pub(crate) fn read_storage_buffer(id: u32, size: usize) -> Vec<u8> {
+pub(crate) fn read_storage_buffer<T>(id: u32, count: usize) -> Vec<T>
+where
+   T: Default + Clone,
+{
    unsafe {
       bind_storage_buffer(id);
-      let mut data = vec![0u8; size];
+      let mut data = vec![T::default(); count];
       gl::GetBufferSubData(
          gl::SHADER_STORAGE_BUFFER,
          0,
-         size as GLsizeiptr,
+         (count * size_of::<T>()) as GLsizeiptr,
          data.as_mut_ptr() as *mut c_void,
       );
       data

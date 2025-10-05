@@ -163,7 +163,7 @@ impl ShaderFile {
       };
 
       let shader = Shader {
-         workers: Workers::empty(),
+         workers: Workers::one(),
          id,
          is_compute,
          tex_ids: vec![None; Slot::total_slots()],

@@ -150,7 +150,7 @@ impl GL {
          }
          let cstr = std::ffi::CStr::from_ptr(ptr as *const i8);
          match cstr.to_str() {
-            Ok(s) => s.to_string(),
+            Ok(s) => format!("OPENGL {s}"),
             Err(e) => {
                return Err(GLueError::wtf(&format!("c-string failed {e}")));
             }
@@ -184,7 +184,7 @@ impl GL {
          }
          let cstr = std::ffi::CStr::from_ptr(ptr as *const i8);
          match cstr.to_str() {
-            Ok(s) => format!("OPENGL {s}"),
+            Ok(s) => s.to_string(),
             Err(e) => {
                return Err(GLueError::wtf(&format!("c-string failed {e}")));
             }

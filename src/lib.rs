@@ -1,5 +1,6 @@
-mod renderer;
 mod asset;
+mod renderer;
 
-pub use renderer::*;
 pub use asset::*;
+pub use cgmath::*;
+pub use renderer::*;

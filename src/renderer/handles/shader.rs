@@ -58,11 +58,11 @@ pub struct Workers {
 }
 
 impl Workers {
-   pub fn empty() -> Self {
+   pub fn one() -> Self {
       Self {
-         group_x: 0,
-         group_y: 0,
-         group_z: 0,
+         group_x: 1,
+         group_y: 1,
+         group_z: 1,
       }
    }
 
@@ -107,11 +107,11 @@ pub struct Shader {
 }
 
 impl Shader {
-   pub fn set_tex_at_slot(&mut self, tex: &Texture2D, slot: Slot) {
-      self.tex_ids[slot.as_index()] = Some(tex.id)
+   pub fn set_tex_at_slot(&mut self, tex_id: u32, slot: Slot) {
+      self.tex_ids[slot.as_index()] = Some(tex_id)
    }
-   pub fn set_sbo_at_slot(&mut self, sbo: &StorageBuffer, slot: Slot) {
-      self.sbo_ids[slot.as_index()] = Some(sbo.id)
+   pub fn set_sbo_at_slot(&mut self, sb_id: u32, slot: Slot) {
+      self.sbo_ids[slot.as_index()] = Some(sb_id)
    }
 
    pub fn storage_binds(&self) -> Vec<(u32, i32)> {
@@ -124,6 +124,25 @@ impl Shader {
          }
          if buffer_id != 0 {
             bindings.push((i as u32, buffer_id as i32));
+         }
+      }
+      bindings
+   }
+   pub fn texture_binds(&self) -> Vec<(u32, i32)> {
+      self.bind();
+      let mut bindings = Vec::new();
+      for i in 0..Slot::total_slots() {
+         let mut texture_id = 0;
+         unsafe {
+            if self.is_compute {
+               gl::GetIntegeri_v(gl::IMAGE_BINDING_NAME, i as u32, &mut texture_id);
+            } else {
+               gl::ActiveTexture(gl::TEXTURE0 + i as u32);
+               gl::GetIntegerv(gl::TEXTURE_BINDING_2D, &mut texture_id);
+            }
+         }
+         if texture_id != 0 {
+            bindings.push((i as u32, texture_id));
          }
       }
       bindings
@@ -198,67 +217,67 @@ impl Shader {
    }
 
    // ---- scalar ----
-   pub(crate) fn set_uni_i32(&self, name: &str, v: i32) {
+   pub fn set_uni_i32(&self, name: &str, v: i32) {
       unsafe { gl::Uniform1i(self.get_uni_location(name), v) }
    }
 
-   pub(crate) fn set_uni_u32(&self, name: &str, v: u32) {
+   pub fn set_uni_u32(&self, name: &str, v: u32) {
       unsafe { gl::Uniform1ui(self.get_uni_location(name), v) }
    }
 
-   pub(crate) fn set_uni_f32(&self, name: &str, v: f32) {
+   pub fn set_uni_f32(&self, name: &str, v: f32) {
       unsafe { gl::Uniform1f(self.get_uni_location(name), v) }
    }
 
    // ---- vec2 ----
-   pub(crate) fn set_uni_vec2_i32(&self, name: &str, v: Vector2<i32>) {
+   pub fn set_uni_vec2_i32(&self, name: &str, v: Vector2<i32>) {
       unsafe { gl::Uniform2i(self.get_uni_location(name), v.x, v.y) }
    }
 
-   pub(crate) fn set_uni_vec2_u32(&self, name: &str, v: Vector2<u32>) {
+   pub fn set_uni_vec2_u32(&self, name: &str, v: Vector2<u32>) {
       unsafe { gl::Uniform2ui(self.get_uni_location(name), v.x, v.y) }
    }
 
-   pub(crate) fn set_uni_vec2_f32(&self, name: &str, v: Vector2<f32>) {
+   pub fn set_uni_vec2_f32(&self, name: &str, v: Vector2<f32>) {
       unsafe { gl::Uniform2f(self.get_uni_location(name), v.x, v.y) }
    }
 
    // ---- vec3 ----
-   pub(crate) fn set_uni_vec3_i32(&self, name: &str, v: Vector3<i32>) {
+   pub fn set_uni_vec3_i32(&self, name: &str, v: Vector3<i32>) {
       unsafe { gl::Uniform3i(self.get_uni_location(name), v.x, v.y, v.z) }
    }
 
-   pub(crate) fn set_uni_vec3_u32(&self, name: &str, v: Vector3<u32>) {
+   pub fn set_uni_vec3_u32(&self, name: &str, v: Vector3<u32>) {
       unsafe { gl::Uniform3ui(self.get_uni_location(name), v.x, v.y, v.z) }
    }
 
-   pub(crate) fn set_uni_vec3_f32(&self, name: &str, v: Vector3<f32>) {
+   pub fn set_uni_vec3_f32(&self, name: &str, v: Vector3<f32>) {
       unsafe { gl::Uniform3f(self.get_uni_location(name), v.x, v.y, v.z) }
    }
 
    // ---- vec4 ----
-   pub(crate) fn set_uni_vec4_i32(&self, name: &str, v: Vector4<i32>) {
+   pub fn set_uni_vec4_i32(&self, name: &str, v: Vector4<i32>) {
       unsafe { gl::Uniform4i(self.get_uni_location(name), v.x, v.y, v.z, v.w) }
    }
 
-   pub(crate) fn set_uni_vec4_u32(&self, name: &str, v: Vector4<u32>) {
+   pub fn set_uni_vec4_u32(&self, name: &str, v: Vector4<u32>) {
       unsafe { gl::Uniform4ui(self.get_uni_location(name), v.x, v.y, v.z, v.w) }
    }
 
-   pub(crate) fn set_uni_vec4_f32(&self, name: &str, v: Vector4<f32>) {
+   pub fn set_uni_vec4_f32(&self, name: &str, v: Vector4<f32>) {
       unsafe { gl::Uniform4f(self.get_uni_location(name), v.x, v.y, v.z, v.w) }
    }
 
    // ---- matrices ----
-   pub(crate) fn set_uni_m2_f32(&self, name: &str, m: Matrix2<f32>) {
+   pub fn set_uni_m2_f32(&self, name: &str, m: Matrix2<f32>) {
       unsafe { gl::UniformMatrix2fv(self.get_uni_location(name), 1, gl::FALSE, m.as_ptr()) }
    }
 
-   pub(crate) fn set_uni_m3_f32(&self, name: &str, m: Matrix3<f32>) {
+   pub fn set_uni_m3_f32(&self, name: &str, m: Matrix3<f32>) {
       unsafe { gl::UniformMatrix3fv(self.get_uni_location(name), 1, gl::FALSE, m.as_ptr()) }
    }
 
-   pub(crate) fn set_uni_m4_f32(&self, name: &str, m: Matrix4<f32>) {
+   pub fn set_uni_m4_f32(&self, name: &str, m: Matrix4<f32>) {
       unsafe { gl::UniformMatrix4fv(self.get_uni_location(name), 1, gl::FALSE, m.as_ptr()) }
    }
 }
