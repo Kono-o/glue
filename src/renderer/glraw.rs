@@ -10,6 +10,7 @@ pub struct GL {
    pub(crate) display: egl::Display,
    pub(crate) context: egl::Context,
    pub(crate) surface: egl::Surface,
+   pub(crate) gl_ver: String,
    pub(crate) glsl_ver: String,
    pub(crate) device: String,
 }
@@ -139,6 +140,23 @@ impl GL {
       gl::load_with(|s| egl.get_proc_address(s).unwrap() as *const _);
 
       // Fetch GL info
+      let gl_ver = unsafe {
+         let ptr = gl::GetString(gl::VERSION);
+         if ptr.is_null() {
+            return Err(GLueError::from(
+               GLueErrorKind::NoVersion,
+               "couldn't parse opengl version",
+            ));
+         }
+         let cstr = std::ffi::CStr::from_ptr(ptr as *const i8);
+         match cstr.to_str() {
+            Ok(s) => s.to_string(),
+            Err(e) => {
+               return Err(GLueError::wtf(&format!("c-string failed {e}")));
+            }
+         }
+      };
+
       let glsl_ver = unsafe {
          let ptr = gl::GetString(gl::SHADING_LANGUAGE_VERSION);
          if ptr.is_null() {
@@ -161,12 +179,12 @@ impl GL {
          if ptr.is_null() {
             return Err(GLueError::from(
                GLueErrorKind::NoDevice,
-               "couldn't parse glsl version",
+               "couldn't parse device name",
             ));
          }
          let cstr = std::ffi::CStr::from_ptr(ptr as *const i8);
          match cstr.to_str() {
-            Ok(s) => s.to_string(),
+            Ok(s) => format!("OPENGL {s}"),
             Err(e) => {
                return Err(GLueError::wtf(&format!("c-string failed {e}")));
             }
@@ -177,6 +195,7 @@ impl GL {
          display,
          context,
          surface,
+         gl_ver,
          glsl_ver,
          device,
       })

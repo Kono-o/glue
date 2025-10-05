@@ -166,8 +166,8 @@ impl ShaderFile {
          workers: Workers::empty(),
          id,
          is_compute,
-         tex_ids: vec![None; TexSlot::total_slots()],
-         sbo_ids: vec![None; SBOSlot::total_slots()],
+         tex_ids: vec![None; Slot::total_slots()],
+         sbo_ids: vec![None; Slot::total_slots()],
       };
       Ok(shader)
    }
@@ -266,8 +266,9 @@ fn u32_to_vec_of_4_u8s(n: u32) -> Vec<u8> {
 
 fn gl_match_shader_type(t: &ShaderSrcType) -> GLenum {
    match t {
-      ShaderSrcType::Vert | ShaderSrcType::Compute => gl::VERTEX_SHADER,
+      ShaderSrcType::Vert => gl::VERTEX_SHADER,
       ShaderSrcType::Frag => gl::FRAGMENT_SHADER,
+      ShaderSrcType::Compute => gl::COMPUTE_SHADER,
    }
 }
 

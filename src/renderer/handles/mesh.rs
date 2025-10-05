@@ -328,43 +328,6 @@ pub(crate) fn delete_index_buffer(id: u32) {
 }
 
 //SBO
-pub enum SBOSlot {
-   S0,
-   S1,
-   S2,
-   S3,
-   S4,
-   S5,
-   S6,
-   S7,
-   S8,
-   S9,
-   S10,
-   S11,
-}
-
-impl SBOSlot {
-   pub(crate) fn as_index(&self) -> usize {
-      match self {
-         SBOSlot::S0 => 0,
-         SBOSlot::S1 => 1,
-         SBOSlot::S2 => 2,
-         SBOSlot::S3 => 3,
-         SBOSlot::S4 => 4,
-         SBOSlot::S5 => 5,
-         SBOSlot::S6 => 6,
-         SBOSlot::S7 => 7,
-         SBOSlot::S8 => 8,
-         SBOSlot::S9 => 9,
-         SBOSlot::S10 => 10,
-         SBOSlot::S11 => 11,
-      }
-   }
-   pub(crate) fn total_slots() -> usize {
-      12
-   }
-}
-
 pub struct StorageBuffer {
    pub(crate) id: u32,
    pub(crate) size: usize,

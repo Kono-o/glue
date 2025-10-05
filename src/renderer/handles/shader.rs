@@ -1,11 +1,11 @@
 use crate::asset::{bind_image_texture2d_at, bind_texture2d_sampler_at, delete_program};
-use crate::renderer::bind_storage_buffer_at;
+use crate::renderer::{bind_storage_buffer_at, unbind_storage_buffer};
 use crate::{StorageBuffer, Texture2D};
 use cgmath::{Matrix, Matrix2, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use gl::types::GLint;
 use std::ffi::CString;
 
-pub enum TexSlot {
+pub enum Slot {
    S0,
    S1,
    S2,
@@ -18,27 +18,35 @@ pub enum TexSlot {
    S9,
    S10,
    S11,
+   S12,
+   S13,
+   S14,
+   S15,
 }
 
-impl TexSlot {
+impl Slot {
    pub(crate) fn as_index(&self) -> usize {
       match self {
-         TexSlot::S0 => 0,
-         TexSlot::S1 => 1,
-         TexSlot::S2 => 2,
-         TexSlot::S3 => 3,
-         TexSlot::S4 => 4,
-         TexSlot::S5 => 5,
-         TexSlot::S6 => 6,
-         TexSlot::S7 => 7,
-         TexSlot::S8 => 8,
-         TexSlot::S9 => 9,
-         TexSlot::S10 => 10,
-         TexSlot::S11 => 11,
+         Slot::S0 => 0,
+         Slot::S1 => 1,
+         Slot::S2 => 2,
+         Slot::S3 => 3,
+         Slot::S4 => 4,
+         Slot::S5 => 5,
+         Slot::S6 => 6,
+         Slot::S7 => 7,
+         Slot::S8 => 8,
+         Slot::S9 => 9,
+         Slot::S10 => 10,
+         Slot::S11 => 11,
+         Slot::S12 => 12,
+         Slot::S13 => 13,
+         Slot::S14 => 14,
+         Slot::S15 => 15,
       }
    }
    pub(crate) fn total_slots() -> usize {
-      12
+      16
    }
 }
 
@@ -99,11 +107,26 @@ pub struct Shader {
 }
 
 impl Shader {
-   pub fn set_tex_at_slot(&mut self, tex: &Texture2D, slot: TexSlot) {
+   pub fn set_tex_at_slot(&mut self, tex: &Texture2D, slot: Slot) {
       self.tex_ids[slot.as_index()] = Some(tex.id)
    }
-   pub fn set_sbo_at_slot(&mut self, sbo: &StorageBuffer, slot: TexSlot) {
-      self.tex_ids[slot.as_index()] = Some(sbo.id)
+   pub fn set_sbo_at_slot(&mut self, sbo: &StorageBuffer, slot: Slot) {
+      self.sbo_ids[slot.as_index()] = Some(sbo.id)
+   }
+
+   pub fn storage_binds(&self) -> Vec<(u32, i32)> {
+      self.bind();
+      let mut bindings = Vec::new();
+      for i in 0..Slot::total_slots() {
+         let mut buffer_id = 0;
+         unsafe {
+            gl::GetIntegeri_v(gl::SHADER_STORAGE_BUFFER_BINDING, i as u32, &mut buffer_id);
+         }
+         if buffer_id != 0 {
+            bindings.push((i as u32, buffer_id as i32));
+         }
+      }
+      bindings
    }
 
    pub fn delete(self) {
@@ -122,10 +145,11 @@ impl Shader {
       //CLOSURE FN GO HERE
       //AND HERE
       self.bind_textures();
+      self.bind_storages();
       let (x, y, z) = self.workers.groups();
       unsafe {
          gl::DispatchCompute(x, y, z);
-         gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+         gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT | gl::SHADER_STORAGE_BARRIER_BIT);
       }
    }
 

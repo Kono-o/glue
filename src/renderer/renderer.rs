@@ -148,6 +148,9 @@ impl GPU {
       Ok(renderer)
    }
    pub fn version(&self) -> &str {
+      &self.gl.gl_ver
+   }
+   pub fn lang_version(&self) -> &str {
       &self.gl.glsl_ver
    }
    pub fn name(&self) -> &str {
