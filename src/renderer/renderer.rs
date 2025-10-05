@@ -122,7 +122,7 @@ pub struct GPU {
 }
 
 impl GPU {
-   pub fn new() -> Result<GPU, GLueError> {
+   pub fn load() -> Result<GPU, GLueError> {
       let cam = Camera::new(Size2D::from(10, 10), CamProj::Ortho);
       let bg_color = RGBA::grey(0.5);
       let gl = match GL::load(10, 10) {
