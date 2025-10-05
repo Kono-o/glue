@@ -5,12 +5,6 @@ use gl::types::{GLenum, GLint, GLsizei, GLsizeiptr};
 use std::ffi::c_void;
 use std::ptr;
 
-pub struct StorageBuffer {
-   id: u32,
-   size: usize,
-   binding_point: Option<u32>,
-}
-
 #[derive(Clone, Debug, Copy)]
 pub enum DrawMode {
    Points,
@@ -110,8 +104,9 @@ impl Mesh3D {
       let tfm = self.transform.matrix();
       shader.set_uni_m4_f32("uTfm", tfm);
 
-      self.bind_textures(shader.is_compute, &shader.tex_ids);
-      &self.handle.draw()
+      shader.bind_textures();
+      shader.bind_storages();
+      self.handle.draw()
    }
    pub fn delete(self) {
       self.handle.delete()
@@ -140,8 +135,9 @@ impl Mesh2D {
       shader.set_uni_m4_f32("uTfm", tfm);
       shader.set_uni_u32("uLayer", layer);
 
-      self.bind_textures(shader.is_compute, &shader.tex_ids);
-      &self.handle.draw()
+      shader.bind_textures();
+      shader.bind_storages();
+      self.handle.draw()
    }
 
    pub fn delete(self) {
@@ -155,7 +151,7 @@ impl MeshHandle {
       match self.has_indices {
          false => self.draw_array(),
          true => {
-            self.bind_index_buffer();
+            bind_index_buffer(self.ind_id);
             self.draw_indexed();
          }
       }
@@ -332,6 +328,88 @@ pub(crate) fn delete_index_buffer(id: u32) {
 }
 
 //SBO
+pub enum SBOSlot {
+   S0,
+   S1,
+   S2,
+   S3,
+   S4,
+   S5,
+   S6,
+   S7,
+   S8,
+   S9,
+   S10,
+   S11,
+}
+
+impl SBOSlot {
+   pub(crate) fn as_index(&self) -> usize {
+      match self {
+         SBOSlot::S0 => 0,
+         SBOSlot::S1 => 1,
+         SBOSlot::S2 => 2,
+         SBOSlot::S3 => 3,
+         SBOSlot::S4 => 4,
+         SBOSlot::S5 => 5,
+         SBOSlot::S6 => 6,
+         SBOSlot::S7 => 7,
+         SBOSlot::S8 => 8,
+         SBOSlot::S9 => 9,
+         SBOSlot::S10 => 10,
+         SBOSlot::S11 => 11,
+      }
+   }
+   pub(crate) fn total_slots() -> usize {
+      12
+   }
+}
+
+pub struct StorageBuffer {
+   pub(crate) id: u32,
+   pub(crate) size: usize,
+}
+
+impl StorageBuffer {
+   pub(crate) fn bind(&self) {
+      bind_storage_buffer(self.id);
+   }
+
+   pub fn new(size: usize) -> StorageBuffer {
+      let id = create_storage_buffer();
+      resize_storage_buffer(id, size);
+      StorageBuffer { id, size }
+   }
+   pub fn resize(&mut self, size: usize) {
+      self.bind();
+      if size != self.size {
+         self.size = size;
+         resize_storage_buffer(self.id, self.size);
+      }
+   }
+
+   pub fn fill(&mut self, data: &[u8]) {
+      self.bind();
+      let len = data.len();
+      self.resize(len);
+      fill_storage_buffer(self.id, data)
+   }
+   pub fn subfill(&mut self, offset: usize, data: &[u8]) {
+      self.bind();
+      let len = data.len() + offset;
+      self.resize(len);
+      subfill_storage_buffer(self.id, offset, data)
+   }
+   pub fn fetch(&self) -> Vec<u8> {
+      self.bind();
+      read_storage_buffer(self.id, self.size)
+   }
+   pub fn delete(self) {
+      delete_storage_buffer(self.id);
+      unbind_storage_buffer()
+   }
+}
+
 pub(crate) fn create_storage_buffer() -> u32 {
    let mut id: u32 = 0;
    unsafe {

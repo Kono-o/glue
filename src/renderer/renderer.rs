@@ -1,4 +1,4 @@
-use crate::renderer::glraw::{GL, GLError};
+use crate::renderer::glraw::GL;
 use crate::{CamProj, Camera, RGBA, Size2D};
 
 #[derive(Copy, Clone)]
@@ -17,22 +17,71 @@ pub enum Cull {
 pub(crate) enum ShaderSrcType {
    Vert,
    Frag,
-}
-
-#[derive(Debug)]
-pub enum GPUError {
-   GLError(GLError),
+   Compute,
 }
 
 #[derive(Debug)]
 pub enum GLueErrorKind {
    //UNKNOWN
    SomethingWentWrong,
+   //OPENGL
+   NoDisplay,
+   InitFailed,
+   ConfigFailed,
+   BindFailed,
+   MakeSurfaceFailed,
+   MakeContextFailed,
+   MakeCurrentFailed,
+   NoVersion,
+   NoDevice,
    //SHADERS
    ShaderCompileFailed,
    ProgramLinkFailed,
+   MissingSrc,
+   //MESHES
+   NotTriangle,
+   //FILE IO
+   Missing,
+   NoPerms,
+   WierdFile,
+   CouldNotMake,
+   CouldNotWrite,
 }
 
+impl GLueErrorKind {
+   fn as_str(&self) -> &str {
+      match self {
+         // UNKNOWN
+         GLueErrorKind::SomethingWentWrong => "unknown",
+
+         // OPENGL
+         GLueErrorKind::NoDisplay
+         | GLueErrorKind::InitFailed
+         | GLueErrorKind::ConfigFailed
+         | GLueErrorKind::BindFailed
+         | GLueErrorKind::MakeSurfaceFailed
+         | GLueErrorKind::MakeContextFailed
+         | GLueErrorKind::MakeCurrentFailed
+         | GLueErrorKind::NoVersion
+         | GLueErrorKind::NoDevice => "opengl",
+
+         // SHADERS
+         GLueErrorKind::ShaderCompileFailed
+         | GLueErrorKind::ProgramLinkFailed
+         | GLueErrorKind::MissingSrc => "shader",
+
+         // MESHES
+         GLueErrorKind::NotTriangle => "mesh",
+
+         // FILE IO
+         GLueErrorKind::Missing
+         | GLueErrorKind::NoPerms
+         | GLueErrorKind::WierdFile
+         | GLueErrorKind::CouldNotMake
+         | GLueErrorKind::CouldNotWrite => "file",
+      }
+   }
+}
 #[derive(Debug)]
 pub struct GLueError {
    msg: String,
@@ -52,6 +101,13 @@ impl GLueError {
          kind,
       }
    }
+   pub fn msg(&self) -> String {
+      format!(
+         "\x1b[1;31mGLUE ERROR ({}):\x1b[0m \x1b[31m{}\x1b[0m",
+         self.kind.as_str(),
+         self.msg
+      )
+   }
 }
 
 pub struct GPU {
@@ -66,11 +122,11 @@ pub struct GPU {
 }
 
 impl GPU {
-   pub fn new() -> Result<GPU, GPUError> {
+   pub fn new() -> Result<GPU, GLueError> {
       let cam = Camera::new(Size2D::from(10, 10), CamProj::Ortho);
       let bg_color = RGBA::grey(0.5);
       let gl = match GL::load(10, 10) {
-         Err(e) => return Err(GPUError::GLError(e)),
+         Err(e) => return Err(e),
          Ok(gl) => gl,
       };
 

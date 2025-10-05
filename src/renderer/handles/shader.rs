@@ -1,5 +1,6 @@
-use crate::Texture2D;
 use crate::asset::{bind_image_texture2d_at, bind_texture2d_sampler_at, delete_program};
+use crate::renderer::bind_storage_buffer_at;
+use crate::{StorageBuffer, Texture2D};
 use cgmath::{Matrix, Matrix2, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use gl::types::GLint;
 use std::ffi::CString;
@@ -16,6 +17,7 @@ pub enum TexSlot {
    S8,
    S9,
    S10,
+   S11,
 }
 
 impl TexSlot {
@@ -32,7 +34,11 @@ impl TexSlot {
          TexSlot::S8 => 8,
          TexSlot::S9 => 9,
          TexSlot::S10 => 10,
+         TexSlot::S11 => 11,
       }
+   }
+   pub(crate) fn total_slots() -> usize {
+      12
    }
 }
 
@@ -89,23 +95,15 @@ pub struct Shader {
    pub(crate) id: u32,
    pub(crate) is_compute: bool,
    pub(crate) tex_ids: Vec<Option<u32>>,
+   pub(crate) sbo_ids: Vec<Option<u32>>,
 }
 
 impl Shader {
-   pub fn attach_tex(&mut self, tex: &Texture2D) {
-      for (slot, tex_id) in self.tex_ids.iter().enumerate() {
-         match tex_id {
-            None => {
-               self.tex_ids[slot] = Some(tex.id);
-               break;
-            }
-            Some(_) => {}
-         }
-      }
-   }
-
    pub fn set_tex_at_slot(&mut self, tex: &Texture2D, slot: TexSlot) {
       self.tex_ids[slot.as_index()] = Some(tex.id)
+   }
+   pub fn set_sbo_at_slot(&mut self, sbo: &StorageBuffer, slot: TexSlot) {
+      self.tex_ids[slot.as_index()] = Some(sbo.id)
    }
 
    pub fn delete(self) {
@@ -135,7 +133,11 @@ impl Shader {
       unsafe {
          let c_name = CString::new(name).unwrap();
          let location = gl::GetUniformLocation(self.id, c_name.as_ptr());
-         if location == -1 { None } else { Some(location) }
+         if location == -1 {
+            None
+         } else {
+            Some(location as u32)
+         }
       }
    }
 
@@ -159,6 +161,14 @@ impl Shader {
                false => bind_texture2d_sampler_at(*id, slot as u32),
                true => bind_image_texture2d_at(*id, slot as u32),
             },
+         }
+      }
+   }
+   pub(crate) fn bind_storages(&self) {
+      for (slot, sbo_id) in self.sbo_ids.iter().enumerate() {
+         match sbo_id {
+            None => {}
+            Some(id) => bind_storage_buffer_at(*id, slot as u32),
          }
       }
    }

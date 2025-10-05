@@ -149,27 +149,31 @@ impl Mesh3DFile {
       self.ind_attr = ind_attr;
    }
 
-   fn from_path(path: &str) -> Result<Mesh3DFile, FileError> {
+   fn from_path(path: &str) -> Result<Mesh3DFile, GLueError> {
+      let wierd = Err(GLueError::from(GLueErrorKind::WierdFile, path));
       match file::name(path) {
-         None => return Err(FileError::WierdFile(path.to_string())),
+         None => return wierd,
          Some(n) => n,
       };
       match file::ex(path) {
-         None => return Err(FileError::WierdFile(path.to_string())),
+         None => return wierd,
          Some(ex) => match ex.eq_ignore_ascii_case(util::ex::OBJ) {
-            false => return Err(FileError::WierdFile(path.to_string())),
+            false => return wierd,
             true => ex,
          },
       };
 
       if file::exists_on_disk(path) {
          let obj_src = match file::read_as_string(path) {
-            Err(e) => return Err(FileError::IOError(e)),
+            Err(e) => return Err(e),
             Ok(o_src) => o_src,
          };
          let msh = match OBJ::parse(&obj_src) {
             OBJ::NonTriangle(line) => {
-               return Err(FileError::NonTriangle(format!("{path} -> line {line}")));
+               return Err(GLueError::from(
+                  GLueErrorKind::NotTriangle,
+                  &format!("{path} -> line {line}"),
+               ));
             }
             OBJ::Parsed {
                pos_attr,
@@ -188,7 +192,10 @@ impl Mesh3DFile {
          };
          Ok(msh)
       } else {
-         Err(FileError::Missing(path.to_string()))
+         Err(GLueError::from(
+            GLueErrorKind::Missing,
+            &format!("file missing {path}"),
+         ))
       }
    }
 

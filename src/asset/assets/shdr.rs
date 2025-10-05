@@ -1,23 +1,6 @@
-use crate::asset::file::IOError;
-
 use crate::*;
 use gl::types::{GLchar, GLenum, GLint, GLsizei, GLuint};
 use std::ffi::CString;
-
-#[derive(Debug)]
-pub enum FileError {
-   //FILE
-   WierdFile(String),
-   Missing(String),
-   IOError(IOError),
-   //SHADER
-   VertEmpty,
-   FragEmpty,
-   //OBJ
-   NonTriangle(String),
-   //PNG
-   InvalidImage(String),
-}
 
 enum GLSL {
    ParsedCompute(String),
@@ -25,7 +8,7 @@ enum GLSL {
    FailedPipeline { v_missing: bool, f_missing: bool },
 }
 impl GLSL {
-   fn parse(src: &str, typ: ShaderMode) -> GLSL {
+   fn parse(src: &str, typ: ShaderType) -> GLSL {
       let mut v_src = String::new();
       let mut f_src = String::new();
 
@@ -86,21 +69,19 @@ impl GLSL {
    }
 }
 
-pub enum ShaderMode {
+pub enum ShaderType {
    Pipeline,
    Compute,
 }
 
-impl ShaderMode {
+impl ShaderType {
    pub(crate) fn is_compute(&self) -> bool {
       match self {
-         ShaderMode::Pipeline => false,
-         ShaderMode::Compute => true,
+         ShaderType::Pipeline => false,
+         ShaderType::Compute => true,
       }
    }
 }
-
-pub enum ShaderError {}
 
 pub enum ShaderFile {
    Pipe { v_src: String, f_src: String },
@@ -108,28 +89,35 @@ pub enum ShaderFile {
 }
 
 impl ShaderFile {
-   pub fn from_path(path: &str, typ: ShaderMode) -> Result<ShaderFile, FileError> {
+   pub fn from_path(path: &str, typ: ShaderType) -> Result<ShaderFile, GLueError> {
+      let wierd_err = Err(GLueError::from(
+         GLueErrorKind::WierdFile,
+         &format!("wierd file {path}"),
+      ));
       match file::name(path) {
-         None => return Err(FileError::WierdFile(path.to_string())),
+         None => return wierd_err,
          Some(n) => n,
       };
 
       match file::ex(path) {
-         None => return Err(FileError::WierdFile(path.to_string())),
+         None => return wierd_err,
          Some(ex) => match ex.to_lowercase().as_str() {
             "glsl" | "comp" | "shader" | "vert" | "frag" => ex,
-            _ => return Err(FileError::WierdFile(path.to_string())),
+            _ => return wierd_err,
          },
       };
 
       if file::exists_on_disk(path) {
          let src = match file::read_as_string(path) {
-            Err(e) => return Err(FileError::IOError(e)),
+            Err(e) => return Err(e),
             Ok(s) => s,
          };
          ShaderFile::from_src(&src, typ)
       } else {
-         Err(FileError::Missing(path.to_string()))
+         Err(GLueError::from(
+            GLueErrorKind::Missing,
+            &format!("missing file {path}"),
+         ))
       }
    }
 
@@ -140,7 +128,7 @@ impl ShaderFile {
       }
    }
 
-   pub fn from_src(src: &str, typ: ShaderMode) -> Result<ShaderFile, FileError> {
+   pub fn from_src(src: &str, typ: ShaderType) -> Result<ShaderFile, GLueError> {
       let glsl = GLSL::parse(&src, typ);
       match glsl {
          GLSL::FailedPipeline {
@@ -152,8 +140,10 @@ impl ShaderFile {
                (true, _) => "vert",
                _ => "frag",
             };
-            let missing_str = format!("missing {missing}");
-            Err(FileError::Missing(missing_str))
+            Err(GLueError::from(
+               GLueErrorKind::MissingSrc,
+               &format!("missing {missing}"),
+            ))
          }
 
          GLSL::ParsedPipeline { v_src, f_src } => Ok(ShaderFile::Pipe { v_src, f_src }),
@@ -167,7 +157,7 @@ impl ShaderFile {
          ShaderFile::Comp(src) => (src, None, true),
       };
 
-      let id = match link_program(&src1, &src2) {
+      let id = match link_program(&src1, &src2, is_compute) {
          Err(e) => return Err(e),
          Ok(id) => id,
       };
@@ -176,7 +166,8 @@ impl ShaderFile {
          workers: Workers::empty(),
          id,
          is_compute,
-         tex_ids: vec![],
+         tex_ids: vec![None; TexSlot::total_slots()],
+         sbo_ids: vec![None; SBOSlot::total_slots()],
       };
       Ok(shader)
    }
@@ -192,17 +183,22 @@ fn compile_shader(src: &str, typ: ShaderSrcType) -> Result<u32, GLueError> {
       gl::ShaderSource(shader_id, 1, &src.as_ptr(), ptr::null());
       gl::CompileShader(shader_id);
 
-      match shader_compile_failure(shader_id) {
+      match shader_compile_failure(shader_id, typ) {
          Ok(()) => Ok(shader_id as u32),
          Err(e) => Err(e),
       }
    }
 }
 
-fn link_program(src1: &str, src2: &Option<String>) -> Result<u32, GLueError> {
+fn link_program(src1: &str, src2: &Option<String>, is_compute: bool) -> Result<u32, GLueError> {
+   let v = match is_compute {
+      false => ShaderSrcType::Vert,
+      true => ShaderSrcType::Compute,
+   };
+
    unsafe {
       let program_id = gl::CreateProgram();
-      let v_shader_id = match compile_shader(src1, ShaderSrcType::Vert) {
+      let v_shader_id = match compile_shader(src1, v) {
          Err(e) => return Err(e),
          Ok(vs_id) => vs_id,
       };
@@ -270,12 +266,12 @@ fn u32_to_vec_of_4_u8s(n: u32) -> Vec<u8> {
 
 fn gl_match_shader_type(t: &ShaderSrcType) -> GLenum {
    match t {
-      ShaderSrcType::Vert => gl::VERTEX_SHADER,
+      ShaderSrcType::Vert | ShaderSrcType::Compute => gl::VERTEX_SHADER,
       ShaderSrcType::Frag => gl::FRAGMENT_SHADER,
    }
 }
 
-unsafe fn shader_compile_failure(shader: GLuint) -> Result<(), GLueError> {
+unsafe fn shader_compile_failure(shader: GLuint, typ: ShaderSrcType) -> Result<(), GLueError> {
    let mut success = gl::FALSE as GLint;
    gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
    if success != gl::TRUE as GLint {
@@ -295,7 +291,14 @@ unsafe fn shader_compile_failure(shader: GLuint) -> Result<(), GLueError> {
          .to_string();
       Err(GLueError::from(
          GLueErrorKind::ShaderCompileFailed,
-         &format!("shader compile failed: {log}"),
+         &format!(
+            "{} shader compile failed: {log}",
+            match typ {
+               ShaderSrcType::Vert => "vertex",
+               ShaderSrcType::Frag => "fragment",
+               ShaderSrcType::Compute => "compute",
+            }
+         ),
       ))
    } else {
       Ok(())

@@ -1,31 +1,10 @@
-use crate::renderer::ImgFormat;
-use crate::{Cull, PolyMode, Size2D};
-use crate::{Image, ImgFilter, ImgWrap, RGBA};
-use cgmath::Matrix;
+use crate::RGBA;
+use crate::{Cull, GLueError, GLueErrorKind, PolyMode, Size2D};
 
-use gl::types::*;
 use khronos_egl as egl;
-use std::ffi::c_void;
-use std::ptr;
 
 pub(crate) const GL_SPV_EXTENSION: &str = "GL_ARB_gl_spirv";
 pub(crate) const SPIRV_EXTENSIONS: &str = "GL_ARB_spirv_extensions";
-
-#[derive(Debug)]
-pub enum GLError {
-   NoDisplay,
-   InitFailed(String),
-   NoActiveContext,
-   CouldParseVersion(String),
-   SPIRVNotFound,
-   ChooseConfigFailed(String),
-   NoSuitableConfig,
-   BindApiFailed(String),
-   CreateSurfaceFailed(String),
-   CreateContextFailed(String),
-   MakeCurrentFailed(String),
-   RenderTime(String),
-}
 
 pub struct GL {
    pub(crate) display: egl::Display,
@@ -36,19 +15,29 @@ pub struct GL {
 }
 
 impl GL {
-   pub(crate) fn load(width: i32, height: i32) -> Result<GL, GLError> {
+   pub(crate) fn load(width: i32, height: i32) -> Result<GL, GLueError> {
       let egl = egl::Instance::new(egl::Static);
 
       // Get default display
       let display = unsafe {
          match egl.get_display(egl::DEFAULT_DISPLAY) {
-            None => return Err(GLError::NoDisplay),
+            None => {
+               return Err(GLueError::from(
+                  GLueErrorKind::NoDisplay,
+                  "no display found",
+               ));
+            }
             Some(d) => d,
          }
       };
 
       let _version = match egl.initialize(display) {
-         Err(e) => return Err(GLError::InitFailed(e.to_string())),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::InitFailed,
+               &format!("opengl init failed {e}"),
+            ));
+         }
          Ok((v1, v2)) => (v1, v2),
       };
 
@@ -73,18 +62,31 @@ impl GL {
 
       let mut configs = Vec::with_capacity(1);
       match egl.choose_config(display, &attribs, &mut configs) {
-         Err(e) => return Err(GLError::ChooseConfigFailed(format!("{:?}", e))),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::ConfigFailed,
+               &format!("opengl config failed {e}"),
+            ));
+         }
          Ok(_) => {}
       }
 
       if configs.is_empty() {
-         return Err(GLError::NoSuitableConfig);
+         return Err(GLueError::from(
+            GLueErrorKind::ConfigFailed,
+            "opengl config is empty",
+         ));
       }
       let config = configs[0];
 
       // Bind OpenGL API
       match egl.bind_api(egl::OPENGL_API) {
-         Err(e) => return Err(GLError::BindApiFailed(format!("{:?}", e))),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::BindFailed,
+               &format!("opengl bind failed {e}"),
+            ));
+         }
          Ok(_) => {}
       }
 
@@ -92,7 +94,12 @@ impl GL {
       let pbuffer_attribs = [egl::WIDTH, width, egl::HEIGHT, height, egl::NONE];
 
       let surface = match egl.create_pbuffer_surface(display, config, &pbuffer_attribs) {
-         Err(e) => return Err(GLError::CreateSurfaceFailed(format!("{:?}", e))),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::MakeSurfaceFailed,
+               &format!("opengl surface creation failed {e}"),
+            ));
+         }
          Ok(s) => s,
       };
 
@@ -108,13 +115,23 @@ impl GL {
       ];
 
       let context = match egl.create_context(display, config, None, &context_attribs) {
-         Err(e) => return Err(GLError::CreateContextFailed(format!("{:?}", e))),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::MakeContextFailed,
+               &format!("opengl context creation failed {e}"),
+            ));
+         }
          Ok(c) => c,
       };
 
       // Make context current
       match egl.make_current(display, Some(surface), Some(surface), Some(context)) {
-         Err(e) => return Err(GLError::MakeCurrentFailed(format!("{:?}", e))),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::MakeCurrentFailed,
+               &format!("opengl context current failed {e}"),
+            ));
+         }
          Ok(_) => {}
       }
 
@@ -125,26 +142,34 @@ impl GL {
       let glsl_ver = unsafe {
          let ptr = gl::GetString(gl::SHADING_LANGUAGE_VERSION);
          if ptr.is_null() {
-            return Err(GLError::CouldParseVersion(
-               "GLSL version is null".to_string(),
+            return Err(GLueError::from(
+               GLueErrorKind::NoVersion,
+               "couldn't parse glsl version",
             ));
          }
          let cstr = std::ffi::CStr::from_ptr(ptr as *const i8);
          match cstr.to_str() {
             Ok(s) => s.to_string(),
-            Err(e) => return Err(GLError::CouldParseVersion(e.to_string())),
+            Err(e) => {
+               return Err(GLueError::wtf(&format!("c-string failed {e}")));
+            }
          }
       };
 
       let device = unsafe {
          let ptr = gl::GetString(gl::RENDERER);
          if ptr.is_null() {
-            return Err(GLError::CouldParseVersion("renderer is null".to_string()));
+            return Err(GLueError::from(
+               GLueErrorKind::NoDevice,
+               "couldn't parse glsl version",
+            ));
          }
          let cstr = std::ffi::CStr::from_ptr(ptr as *const i8);
          match cstr.to_str() {
             Ok(s) => s.to_string(),
-            Err(e) => return Err(GLError::CouldParseVersion(e.to_string())),
+            Err(e) => {
+               return Err(GLueError::wtf(&format!("c-string failed {e}")));
+            }
          }
       };
 
@@ -155,19 +180,6 @@ impl GL {
          glsl_ver,
          device,
       })
-   }
-
-   fn make_current(&self) -> Result<(), GLError> {
-      let egl = egl::Instance::new(egl::Static);
-      match egl.make_current(
-         self.display,
-         Some(self.surface),
-         Some(self.surface),
-         Some(self.context),
-      ) {
-         Err(e) => Err(GLError::MakeCurrentFailed(format!("{:?}", e))),
-         Ok(_) => Ok(()),
-      }
    }
 }
 

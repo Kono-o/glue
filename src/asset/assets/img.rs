@@ -1,6 +1,5 @@
-use crate::asset::FileError;
 use crate::renderer::ImgFormat;
-use crate::{ImgFilter, ImgWrap, Size2D, Texture2D};
+use crate::{GLueError, GLueErrorKind, ImgFilter, ImgWrap, Size2D, Texture2D};
 use gl::types::{GLenum, GLint, GLsizei};
 use image::{ColorType, GenericImageView};
 use std::ffi::c_void;
@@ -16,10 +15,15 @@ pub struct Image {
 }
 
 impl Image {
-   pub fn from_path(path: &str) -> Result<Image, FileError> {
+   pub fn from_path(path: &str) -> Result<Image, GLueError> {
       let (color, (w, h), rgba32f) = match image::open(path) {
          Ok(i) => (i.color(), i.dimensions(), i.into_rgba32f()),
-         Err(e) => return Err(FileError::InvalidImage(path.to_string())),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::WierdFile,
+               &format!("wierd file {path} {e}"),
+            ));
+         }
       };
 
       let bytes = rgba32f
@@ -41,7 +45,12 @@ impl Image {
 
          ColorType::Rgb32F => ImgFormat::RGB(32),
          ColorType::Rgba32F => ImgFormat::RGBA(32),
-         _ => return Err(FileError::InvalidImage(path.to_string())),
+         _ => {
+            return Err(GLueError::from(
+               GLueErrorKind::WierdFile,
+               &format!("invalid color type {path}"),
+            ));
+         }
       };
       let filter = ImgFilter::Closest;
       let wrap = ImgWrap::Clip;

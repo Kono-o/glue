@@ -1,18 +1,7 @@
+use crate::{GLueError, GLueErrorKind};
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
 use std::path::PathBuf;
-
-#[derive(Debug)]
-pub(crate) enum IOError {
-   NoPerms,
-   Missing,
-   NotValid,
-   Unsupported(String),
-   CouldNotMake,
-   CouldNotRead,
-   CouldNotWrite,
-   Unknown,
-}
 
 pub(crate) fn name(path: &str) -> Option<String> {
    let path = PathBuf::from(&path);
@@ -35,16 +24,21 @@ pub(crate) fn exists_on_disk(path: &str) -> bool {
    path.exists()
 }
 
-pub(crate) fn write_str_to_disk(path: &str, name: &str, content: &str) -> Result<(), IOError> {
+pub(crate) fn write_str_to_disk(path: &str, name: &str, content: &str) -> Result<(), GLueError> {
    write_bytes_to_disk(path, name, content.as_bytes())
 }
 
-pub(crate) fn write_bytes_to_disk(path: &str, name: &str, content: &[u8]) -> Result<(), IOError> {
+pub(crate) fn write_bytes_to_disk(path: &str, name: &str, content: &[u8]) -> Result<(), GLueError> {
    let pathbuf = PathBuf::from(path);
+
    if !pathbuf.exists() {
-      //return NEResult::ER(NEError::file_missing(path));
       match fs::create_dir_all(path) {
-         Err(_) => return Err(IOError::CouldNotMake),
+         Err(e) => {
+            return Err(GLueError::from(
+               GLueErrorKind::CouldNotMake,
+               &format!("could not make dir {path} {e}"),
+            ));
+         }
          Ok(_) => {}
       };
    }
@@ -52,17 +46,23 @@ pub(crate) fn write_bytes_to_disk(path: &str, name: &str, content: &[u8]) -> Res
    let file_path = format!("{}{}", path, name);
    let mut file = match fs::File::create(&file_path) {
       Ok(f) => f,
-      Err(_) => {
-         return Err(IOError::CouldNotMake);
+      Err(e) => {
+         return Err(GLueError::from(
+            GLueErrorKind::CouldNotMake,
+            &format!("could not make dir {file_path} {e}"),
+         ));
       }
    };
    match file.write_all(content) {
       Ok(_) => Ok(()),
-      Err(_) => Err(IOError::CouldNotWrite),
+      Err(e) => Err(GLueError::from(
+         GLueErrorKind::CouldNotWrite,
+         &format!("could not write file {file_path} {e}"),
+      )),
    }
 }
 
-pub(crate) fn read_as_bytes(path: &str) -> Result<Vec<u8>, IOError> {
+pub(crate) fn read_as_bytes(path: &str) -> Result<Vec<u8>, GLueError> {
    let mut contents: Vec<u8> = Vec::new();
 
    let mut err;
@@ -71,20 +71,24 @@ pub(crate) fn read_as_bytes(path: &str) -> Result<Vec<u8>, IOError> {
          Ok(_) => return Ok(contents),
          Err(e) => err = e,
       },
-      Err(e) => {
-         err = e;
-      }
+      Err(e) => err = e,
    }
 
-   let io_err = match err.kind() {
-      ErrorKind::NotFound | ErrorKind::InvalidInput => IOError::NotValid,
-      ErrorKind::PermissionDenied => IOError::NoPerms,
-      _ => IOError::Unknown,
+   let glue_err = match err.kind() {
+      ErrorKind::NotFound | ErrorKind::InvalidInput => GLueError::from(
+         GLueErrorKind::WierdFile,
+         &format!("wierd file {path} {err}"),
+      ),
+      ErrorKind::PermissionDenied => GLueError::from(
+         GLueErrorKind::NoPerms,
+         &format!("perms denied {path} {err}"),
+      ),
+      e => GLueError::wtf(&format!("unknown file error {e}")),
    };
-   Err(io_err)
+   Err(glue_err)
 }
 
-pub(crate) fn read_as_string(path: &str) -> Result<String, IOError> {
+pub(crate) fn read_as_string(path: &str) -> Result<String, GLueError> {
    let mut contents = String::new();
 
    let mut err;
@@ -98,10 +102,16 @@ pub(crate) fn read_as_string(path: &str) -> Result<String, IOError> {
       }
    }
 
-   let io_err = match err.kind() {
-      ErrorKind::NotFound | ErrorKind::InvalidInput => IOError::NotValid,
-      ErrorKind::PermissionDenied => IOError::NoPerms,
-      _ => IOError::Unknown,
+   let glue_err = match err.kind() {
+      ErrorKind::NotFound | ErrorKind::InvalidInput => GLueError::from(
+         GLueErrorKind::WierdFile,
+         &format!("wierd file {path} {err}"),
+      ),
+      ErrorKind::PermissionDenied => GLueError::from(
+         GLueErrorKind::NoPerms,
+         &format!("perms denied {path} {err}"),
+      ),
+      e => GLueError::wtf(&format!("unknown file error {err}")),
    };
-   Err(io_err)
+   Err(glue_err)
 }
