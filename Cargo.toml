@@ -16,8 +16,8 @@ documentation = "https://docs.rs/glue"
 cgmath = "0.18.0"
 khronos-egl = { version = "6.0", features = ["static"] }
 gl = "0.14.0"
-flate2 = "1.1.2"
 image = "0.25.8"
+kolor = { path = "../kolor" }
 [profile.release]
 strip = true
 opt-level = "z"

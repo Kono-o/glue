@@ -1,7 +1,7 @@
-use crate::RGBA;
 use crate::{Cull, GLueError, GLueErrorKind, PolyMode, Size2D};
 
 use khronos_egl as egl;
+use kolor::RGBA;
 
 pub(crate) const GL_SPV_EXTENSION: &str = "GL_ARB_gl_spirv";
 pub(crate) const SPIRV_EXTENSIONS: &str = "GL_ARB_spirv_extensions";
@@ -221,7 +221,7 @@ impl GL {
 
    pub(crate) fn set_clear(&self, color: RGBA) {
       unsafe {
-         gl::ClearColor(color.0, color.1, color.2, color.3);
+         gl::ClearColor(color.r(), color.g(), color.b(), color.a());
       }
    }
    pub(crate) fn resize(&self, size: Size2D) {

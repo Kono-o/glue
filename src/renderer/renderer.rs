@@ -1,5 +1,6 @@
 use crate::renderer::glraw::GL;
-use crate::{CamProj, Camera, RGBA, Size2D};
+use crate::{CamProj, Camera, Size2D};
+use kolor::RGBA;
 
 #[derive(Copy, Clone)]
 pub enum PolyMode {
